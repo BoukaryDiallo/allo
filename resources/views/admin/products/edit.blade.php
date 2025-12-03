@@ -331,7 +331,7 @@
                                                 @php
                                                     $imageUrl = $image->url;
                                                     if (!str_starts_with($imageUrl, 'http')) {
-                                                        $imageUrl = asset('storage/' . ltrim($imageUrl, '/'));
+                                                        $imageUrl = \Storage::url(ltrim($imageUrl, '/'));
                                                     }
                                                 @endphp
                                                 <!-- Debug: Image ID {{ $image->id }}, URL: {{ $imageUrl }} -->
@@ -345,7 +345,7 @@
                                                     <!-- Actions sur l'image -->
                                                     <div class="position-absolute top-0 end-0 p-1">
                                                         @if(!isset($image->type) || $image->type !== 'principale')
-                                                            <form method="POST" action="{{ route('admin.products.set-main-image', [$product->id, $image->id]) }}" class="d-inline">
+                                                            <form method="POST" action="{{ route('admin.products.set-main-image', [$updateSlug, $image->id]) }}" class="d-inline">
                                                                 @csrf
                                                                 <button type="submit" class="btn btn-sm btn-warning" title="Définir comme image principale">
                                                                     <i class="fas fa-star"></i>
@@ -364,12 +364,10 @@
                                                         @endphp
                                                         <form method="POST" action="{{ route('admin.products.delete-image', [$deleteImageSlug, $image->id]) }}"
                                                               class="d-inline delete-image-form"
-                                                              onsubmit="return false;">
+                                                              onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer cette image ? Cette action est irréversible.');">
                                                             @csrf
                                                             @method('DELETE')
-                                                            <button type="button" class="btn btn-sm btn-danger delete-image-btn"
-                                                                    data-url="{{ route('admin.products.delete-image', [$deleteImageSlug, $image->id]) }}"
-                                                                    data-message="Êtes-vous sûr de vouloir supprimer cette image ? Cette action est irréversible."
+                                                            <button type="submit" class="btn btn-sm btn-danger"
                                                                     title="Supprimer l&#39;image">
                                                                 <i class="fas fa-trash"></i>
                                                             </button>

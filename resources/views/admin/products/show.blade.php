@@ -275,7 +275,7 @@
 
                             <!-- Formulaire d'upload d'images supplémentaires -->
                             <div class="mb-3">
-                                <form method="POST" action="{{ route('admin.products.upload-images', $product->id) }}" enctype="multipart/form-data" id="uploadForm">
+                                <form method="POST" action="{{ route('admin.products.upload-images', $product->slug ?? $product->id) }}" enctype="multipart/form-data" id="uploadForm">
                                     @csrf
                                     <div class="mb-2">
                                         <label for="images" class="form-label">Ajouter des images</label>
@@ -301,9 +301,9 @@
                                         <div class="col-12 mb-3">
                                             @php
                                                 $imageUrl = $image->url;
-                                                // Si l'URL ne commence pas par http, ajouter le chemin storage
+                                                // Si l'URL ne commence pas par http, utiliser Storage::url (S3/public)
                                                 if (!str_starts_with($imageUrl, 'http')) {
-                                                    $imageUrl = asset('storage/' . ltrim($imageUrl, '/'));
+                                                    $imageUrl = \Storage::url(ltrim($imageUrl, '/'));
                                                 }
                                             @endphp
                                             <div class="position-relative">
@@ -316,7 +316,7 @@
                                                 <!-- Actions sur l'image -->
                                                 <div class="position-absolute top-0 end-0 p-2">
                                                     @if(!isset($image->type) || $image->type !== 'principale')
-                                                        <form method="POST" action="{{ route('admin.products.set-main-image', [$product->id, $image->id]) }}" class="d-inline">
+                                                        <form method="POST" action="{{ route('admin.products.set-main-image', [$product->slug ?? $product->id, $image->id]) }}" class="d-inline">
                                                             @csrf
                                                             <button type="submit" class="btn btn-sm btn-warning" title="Définir comme image principale">
                                                                 <i class="fas fa-star"></i>
@@ -328,13 +328,12 @@
                                                         </span>
                                                     @endif
 
-                                                    <form method="POST" action="{{ route('admin.products.delete-image', [$product->id, $image->id]) }}"
+                                                    <form method="POST" action="{{ route('admin.products.delete-image', [$product->slug ?? $product->id, $image->id]) }}"
                                                           class="d-inline delete-image-form"
-                                                          onsubmit="return false;">
+                                                          onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer cette image ? Cette action est irréversible.');">
                                                         @csrf
                                                         @method('DELETE')
-                                                        <button type="button" class="btn btn-sm btn-danger"
-                                                                onclick="deleteWithConfirmation('{{ route('admin.products.delete-image', [$product->id, $image->id]) }}', 'Êtes-vous sûr de vouloir supprimer cette image ? Cette action est irréversible.', 'DELETE')"
+                                                        <button type="submit" class="btn btn-sm btn-danger"
                                                                 title="Supprimer l'image">
                                                             <i class="fas fa-trash"></i>
                                                         </button>
@@ -361,8 +360,8 @@
                                                 if (str_starts_with($image, 'http')) {
                                                     $imageUrl = $image;
                                                 } else {
-                                                    // Sinon, ajouter le chemin storage
-                                                    $imageUrl = asset('storage/' . ltrim($image, '/'));
+                                                    // Sinon, utiliser Storage::url (S3/public)
+                                                    $imageUrl = \Storage::url(ltrim($image, '/'));
                                                 }
                                             @endphp
                                             <img src="{{ $imageUrl }}"

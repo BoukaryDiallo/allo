@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class ProductController extends Controller
 {
@@ -16,6 +17,136 @@ class ProductController extends Controller
     {
         ini_set('memory_limit', '2G'); // Augmentation à 2GB
         ini_set('max_execution_time', 300); // 5 minutes max
+    }
+
+    public function uploadImages(Request $request, $slug)
+    {
+        $request->validate([
+            'images' => 'required',
+            'images.*' => 'image|mimes:jpeg,png,jpg,gif,webp,svg|max:4096',
+        ]);
+
+        // Résolution produit par slug/ID
+        $productData = DB::table('products')->where('slug', $slug)->whereNull('deleted_at')->first();
+        if (!$productData && preg_match('/-(\d+)$/', (string)$slug, $m)) {
+            $productData = DB::table('products')->where('id', (int)$m[1])->whereNull('deleted_at')->first();
+        }
+        if (!$productData && is_numeric($slug)) {
+            $productData = DB::table('products')->where('id', (int)$slug)->whereNull('deleted_at')->first();
+        }
+        if (!$productData) {
+            return redirect()->back()->with('error', 'Produit introuvable.');
+        }
+
+        $productId = $productData->id;
+
+        DB::beginTransaction();
+        try {
+            $newPaths = [];
+            $currentMaxOrder = (int) DB::table('product_images')->where('product_id', $productId)->max('order');
+
+            foreach ($request->file('images') as $file) {
+                if (!$file->isValid()) { continue; }
+                $imageName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                $path = $file->storeAs('products', $imageName, 's3');
+                $newPaths[] = $path;
+                $currentMaxOrder++;
+                DB::table('product_images')->insert([
+                    'product_id' => $productId,
+                    'url' => $path,
+                    'order' => $currentMaxOrder,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            if (!empty($newPaths)) {
+                $existing = DB::table('products')->where('id', $productId)->value('images');
+                $existingArr = [];
+                if ($existing) { $decoded = json_decode($existing, true); if (is_array($decoded)) { $existingArr = $decoded; } }
+                $merged = array_values(array_unique(array_merge($existingArr, $newPaths)));
+                DB::table('products')->where('id', $productId)->update(['images' => json_encode($merged), 'updated_at' => now()]);
+            }
+
+            DB::commit();
+            return redirect()->route('admin.products.show', $productData->slug ?? $productId)->with('success', 'Images ajoutées.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('uploadImages error: '.$e->getMessage());
+            return redirect()->back()->with('error', 'Erreur lors de l\'upload des images.');
+        }
+    }
+
+    public function setMainImage($slug, $imageId)
+    {
+        $productData = DB::table('products')->select('id','slug')->where('slug', $slug)->whereNull('deleted_at')->first();
+        if (!$productData && preg_match('/-(\d+)$/', (string)$slug, $m)) {
+            $productData = DB::table('products')->select('id','slug')->where('id', (int)$m[1])->whereNull('deleted_at')->first();
+        }
+        if (!$productData && is_numeric($slug)) {
+            $productData = DB::table('products')->select('id','slug')->where('id', (int)$slug)->whereNull('deleted_at')->first();
+        }
+        if (!$productData) {
+            return redirect()->back()->with('error', 'Produit introuvable.');
+        }
+
+        $image = DB::table('product_images')->where('id', $imageId)->where('product_id', $productData->id)->first();
+        if (!$image) {
+            return redirect()->back()->with('error', 'Image introuvable.');
+        }
+
+        DB::beginTransaction();
+        try {
+            DB::table('product_images')->where('product_id', $productData->id)->update(['type' => null, 'updated_at' => now()]);
+            DB::table('product_images')->where('id', $imageId)->update(['type' => 'principale', 'updated_at' => now()]);
+            DB::commit();
+            return redirect()->route('admin.products.show', $productData->slug ?? $productData->id)->with('success', 'Image principale définie.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'Erreur lors de la définition de l\'image principale.');
+        }
+    }
+
+    public function deleteImage($slug, $imageId)
+    {
+        $productData = DB::table('products')->select('id','slug')->where('slug', $slug)->whereNull('deleted_at')->first();
+        if (!$productData && preg_match('/-(\d+)$/', (string)$slug, $m)) {
+            $productData = DB::table('products')->select('id','slug')->where('id', (int)$m[1])->whereNull('deleted_at')->first();
+        }
+        if (!$productData && is_numeric($slug)) {
+            $productData = DB::table('products')->select('id','slug')->where('id', (int)$slug)->whereNull('deleted_at')->first();
+        }
+        if (!$productData) {
+            return redirect()->back()->with('error', 'Produit introuvable.');
+        }
+
+        $image = DB::table('product_images')->where('id', $imageId)->where('product_id', $productData->id)->first();
+        if (!$image) {
+            return redirect()->back()->with('error', 'Image introuvable.');
+        }
+
+        DB::beginTransaction();
+        try {
+            if (!empty($image->url)) {
+                try { Storage::disk('s3')->delete($image->url); } catch (\Exception $e) { /* ignore */ }
+            }
+            DB::table('product_images')->where('id', $imageId)->delete();
+
+            $existing = DB::table('products')->where('id', $productData->id)->value('images');
+            if ($existing) {
+                $arr = json_decode($existing, true);
+                if (is_array($arr)) {
+                    $arr = array_values(array_filter($arr, function($p) use ($image) { return $p !== $image->url; }));
+                    DB::table('products')->where('id', $productData->id)->update(['images' => json_encode($arr), 'updated_at' => now()]);
+                }
+            }
+
+            DB::commit();
+            return redirect()->route('admin.products.show', $productData->slug ?? $productData->id)->with('success', 'Image supprimée.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'Erreur lors de la suppression de l\'image.');
+        }
     }
 
     public function index(Request $request)
@@ -977,8 +1108,25 @@ class ProductController extends Controller
                 $data['cost_price'] = str_replace(',', '.', $data['cost_price']);
             }
 
-            // Validation
-            $validated = validator($data, [
+            // Validation: assouplie si statut brouillon
+            $rulesDraft = [
+                'name' => 'required|string|max:255',
+                'description' => 'nullable|string',
+                'price' => 'nullable|numeric|min:0',
+                'stock_quantity' => 'nullable|integer|min:0',
+                'category_id' => 'required|exists:categories,id',
+                'product_type_id' => 'nullable|exists:product_types,id',
+                'status' => 'required|in:active,inactive,draft',
+                'sku' => 'nullable|string|max:255',
+                'cost_price' => 'nullable|numeric|min:0',
+                'min_stock_alert' => 'nullable|integer|min:0',
+                'barcode' => 'nullable|string|max:255',
+                'meta_title' => 'nullable|string|max:255',
+                'meta_description' => 'nullable|string|max:500',
+                'tags' => 'nullable|string',
+                'images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+            ];
+            $rulesStrict = [
                 'name' => 'required|string|max:255',
                 'description' => 'nullable|string',
                 'price' => 'required|numeric|min:0',
@@ -994,7 +1142,12 @@ class ProductController extends Controller
                 'meta_description' => 'nullable|string|max:500',
                 'tags' => 'nullable|string',
                 'images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
-            ], [
+            ];
+
+            $targetStatus = $data['status'] ?? $productData->status ?? 'inactive';
+            $rules = $targetStatus === 'draft' ? $rulesDraft : $rulesStrict;
+
+            $validated = validator($data, $rules, [
                 'name.required' => 'Le nom est obligatoire.',
                 'price.required' => 'Le prix est obligatoire.',
                 'price.numeric' => 'Le prix doit être un nombre.',
@@ -1005,9 +1158,9 @@ class ProductController extends Controller
 
             \Log::info('Validation OK, données validées:', $validated);
 
-            // Convertir tags en tableau JSON si c'est une chaîne
+            // Convertir tags en tableau JSON si transmis
             $tags = null;
-            if (isset($validated['tags']) && !empty($validated['tags'])) {
+            if (array_key_exists('tags', $validated) && !empty($validated['tags'])) {
                 if (is_string($validated['tags'])) {
                     // Si c'est une chaîne, la convertir en tableau
                     // Si la chaîne contient des virgules, la diviser en tableau
@@ -1022,28 +1175,33 @@ class ProductController extends Controller
                 }
             }
 
-            // Nettoyer les données pour la mise à jour (ne garder que les colonnes de la table)
-            $updateData = [
-                'name' => $validated['name'],
-                'description' => $validated['description'] ?? null,
-                'price' => floatval($validated['price']),
-                'stock_quantity' => intval($validated['stock_quantity']),
-                'category_id' => intval($validated['category_id']),
-                'status' => $validated['status'],
-                'sku' => $validated['sku'] ?? null,
-                'cost_price' => isset($validated['cost_price']) && !empty($validated['cost_price']) ? floatval($validated['cost_price']) : null,
-                'min_stock_alert' => isset($validated['min_stock_alert']) ? intval($validated['min_stock_alert']) : null,
-                'barcode' => $validated['barcode'] ?? null,
-                'meta_title' => $validated['meta_title'] ?? null,
-                'meta_description' => $validated['meta_description'] ?? null,
-                'tags' => $tags !== null ? json_encode($tags) : null,
-                'updated_at' => now(),
-            ];
+            // Construire les données à mettre à jour uniquement pour les champs transmis
+            $updateData = [ 'updated_at' => now() ];
+            $mapNumericFloat = ['price','cost_price'];
+            $mapNumericInt = ['stock_quantity','category_id','min_stock_alert','product_type_id'];
+            $simpleFields = ['name','description','status','sku','barcode','meta_title','meta_description'];
+
+            foreach ($simpleFields as $f) {
+                if (array_key_exists($f, $validated)) {
+                    $updateData[$f] = $validated[$f] !== '' ? $validated[$f] : null;
+                }
+            }
+            foreach ($mapNumericFloat as $f) {
+                if (array_key_exists($f, $validated) && $validated[$f] !== null && $validated[$f] !== '') {
+                    $updateData[$f] = floatval($validated[$f]);
+                }
+            }
+            foreach ($mapNumericInt as $f) {
+                if (array_key_exists($f, $validated) && $validated[$f] !== null && $validated[$f] !== '') {
+                    $updateData[$f] = intval($validated[$f]);
+                }
+            }
+            if ($tags !== null) {
+                $updateData['tags'] = json_encode($tags);
+            }
 
             // Si product_type_id existe dans les données validées, l'ajouter
-            if (isset($validated['product_type_id']) && !empty($validated['product_type_id'])) {
-                $updateData['product_type_id'] = intval($validated['product_type_id']);
-            }
+            // product_type_id déjà géré ci-dessus si transmis
 
             \Log::info('Données à mettre à jour:', $updateData);
 
