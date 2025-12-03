@@ -183,7 +183,7 @@
                                                 @php
                                                     $imageUrl = $item->product_image;
                                                     if (!str_starts_with($imageUrl, 'http')) {
-                                                        $imageUrl = asset('storage/' . ltrim($imageUrl, '/'));
+                                                        $imageUrl = \Storage::url(ltrim($imageUrl, '/'));
                                                     }
                                                 @endphp
                                                 <img src="{{ $imageUrl }}" alt="{{ $item->product_name }}"
@@ -228,7 +228,7 @@
                                                 @php
                                                     $imageUrl = $item->product_image;
                                                     if (!str_starts_with($imageUrl, 'http')) {
-                                                        $imageUrl = asset('storage/' . ltrim($imageUrl, '/'));
+                                                        $imageUrl = \Storage::url(ltrim($imageUrl, '/'));
                                                     }
                                                 @endphp
                                                 <img src="{{ $imageUrl }}" alt="{{ $item->product_name }}"

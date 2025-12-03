@@ -13,7 +13,7 @@ return [
     |
     */
 
-    'default' => env('FILESYSTEM_DISK', 'r2'),
+    'default' => env('FILESYSTEM_DISK', 's3'),
 
     /*
     |--------------------------------------------------------------------------
@@ -67,7 +67,7 @@ return [
             'region' => env('CLOUDFLARE_R2_REGION', 'us-east-1'), // or 'auto'
             'bucket' => env('CLOUDFLARE_R2_BUCKET'),
             'url' => env('CLOUDFLARE_R2_URL'),
-            'visibility' => 'private',
+            'visibility' => 'public',
             'endpoint' => env('CLOUDFLARE_R2_ENDPOINT'),
             'use_path_style_endpoint' => env('CLOUDFLARE_R2_USE_PATH_STYLE_ENDPOINT', false),
             'throw' => false,

@@ -350,12 +350,16 @@ use Illuminate\Support\Facades\DB;
                                     }
                                 @endphp
                                 @if($mainImage && isset($mainImage->url))
-                                    <img src="{{ Storage::url($mainImage->url) }}"
+                                    @php
+                                        $img = $mainImage->url;
+                                        $imgUrl = str_starts_with($img, 'http') ? $img : \Storage::url(ltrim($img, '/'));
+                                    @endphp
+                                    <img src="{{ $imgUrl }}"
                                          alt="{{ $product->name }}"
                                          class="img-thumbnail"
                                          style="width: 60px; height: 60px; object-fit: cover; border-radius: 6px; border: 1px solid #dee2e6;"
                                          loading="lazy"
-                                         onerror="this.parentElement.innerHTML='<div class=\'bg-light d-flex align-items-center justify-content-center\' style=\'width: 60px; height: 60px; border-radius: 6px;\'><i class=\'fas fa-image text-muted\'></i></div>';">
+                                         onerror="this.parentElement.innerHTML='\n<div class=\'bg-light d-flex align-items-center justify-content-center\' style=\'width: 60px; height: 60px; border-radius: 6px;\'><i class=\'fas fa-image text-muted\'></i></div>';">
                                 @else
                                     <div class="bg-light d-flex align-items-center justify-content-center"
                                          style="width: 60px; height: 60px; border-radius: 6px; border: 1px solid #dee2e6;">
